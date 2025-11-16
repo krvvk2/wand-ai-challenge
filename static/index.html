@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RAG Demo</title>
+  <style>
+    :root{--bg:#1a1a1a;--text:#e5e5e5;--border:#333;--muted:#9ca3af;--accent:#3b82f6;--result-bg:#262626;--result-border:#404040;--secondary:#4b5563;--rate-bg:#374151;--rate-active:#d97706;--loader:#3b82f6;--sugg-bg:#262626;--sugg-border:#404040;--sugg-title:#60a5fa;--sugg-detail:#9ca3af}
+    body{font-family:Inter,system-ui,sans-serif;margin:20px;background:var(--bg);color:var(--text);line-height:1.5}
+    h1{font-size:20px;margin-bottom:8px}
+    .card{border:1px solid var(--border);padding:16px;border-radius:8px;margin-bottom:16px;background:var(--bg);box-shadow:0 1px 3px rgba(0,0,0,.05)}
+    label{display:block;margin:12px 0 6px;font-weight:600;font-size:14px}
+    input,button{padding:10px;border-radius:6px;font-size:14px}
+    input[type=text],input[type=file]{width:100%;border:1px solid var(--border);background:var(--bg);color:var(--text);box-sizing:border-box}
+    button{background:var(--accent);color:#fff;border:0;cursor:pointer;font-weight:500}
+    button.secondary{background:var(--secondary);color:var(--text)}
+    button:disabled{background:var(--muted);cursor:not-allowed}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:10px}
+    .muted{color:var(--muted);font-size:13px}
+    .result{background:var(--result-bg);padding:14px;border-radius:6px;margin-top:12px;border:1px solid var(--result-border);font-size:14px;white-space:pre-wrap}
+    .sources,.suggestions{margin-top:12px;font-size:13px}
+    .rating button{padding:6px 10px;background:var(--rate-bg);color:var(--text);margin-right:6px;font-size:13px;border:1px solid var(--border)}
+    .rating button.active{background:var(--rate-active);font-weight:600}
+    .hidden{display:none}
+    .loader{color:var(--loader);font-weight:600}
+    .sugg-item{margin-bottom:12px;padding:10px;background:var(--sugg-bg);border-radius:6px;border:1px solid var(--sugg-border)}
+    .sugg-item strong{color:var(--sugg-title)}
+    #uploadStatus{word-break:break-all}
+  </style>
+</head>
+<body>
+<h1>RAG Demo — <span style="color:#60a5fa">Wand AI Challenge 2</span></h1>
+  <div class="card">
+    <strong>1) Upload documents</strong>
+    <input id="file" type="file" multiple accept=".pdf,.txt">
+    <div class="row">
+      <button id="uploadBtn">Upload</button>
+      <span id="uploadStatus" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <strong>2) Ask a question</strong>
+    <input id="query" placeholder="e.g. Why is AI popular?">
+    <div class="row">
+      <button id="queryBtn">Run Query</button>
+      <span id="queryStatus" class="muted loader hidden">Thinking...</span>
+    </div>
+
+    <div id="result" class="result hidden"></div>
+    <div id="sources" class="sources hidden"></div>
+    <div id="suggestions" class="suggestions hidden"></div>
+
+    <div id="rating" class="hidden" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+      <div class="muted"><strong>Rate this answer:</strong></div>
+      <div class="rating" style="margin-top:8px">
+        <button class="rateBtn" data-score="1">1</button>
+        <button class="rateBtn" data-score="2">2</button>
+        <button class="rateBtn" data-score="3">3</button>
+        <button class="rateBtn" data-score="4">4</button>
+        <button class="rateBtn" data-score="5">5</button>
+        <input id="feedback" placeholder="Optional feedback" style="width:60%;margin-left:10px">
+        <button id="sendRating" class="secondary" style="margin-left:6px">Send</button>
+      </div>
+      <div id="ratingStatus" class="muted"></div>
+    </div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fileInput = $('file'), uploadBtn = $('uploadBtn'), uploadStatus = $('uploadStatus');
+const queryInput = $('query'), queryBtn = $('queryBtn'), queryStatus = $('queryStatus');
+const result = $('result'), sources = $('sources'), suggestions = $('suggestions'), rating = $('rating');
+let lastQueryId = null, lastRating = null;
+
+// Show file names
+fileInput.onchange = () => {
+  const names = Array.from(fileInput.files).map(f => f.name).join(', ');
+  uploadStatus.textContent = names || '';
+};
+
+// Upload
+uploadBtn.onclick = async () => {
+  const files = fileInput.files;
+  if (!files.length) return uploadStatus.textContent = 'Select file(s)';
+  uploadStatus.textContent = `Uploading: ${Array.from(files).map(f=>f.name).join(', ')}`;
+  uploadBtn.disabled = true;
+  const form = new FormData();
+  for (let f of files) form.append('files', f);
+  try {
+    const r = await fetch('/upload_document', {method:'POST', body:form});
+    const j = await r.json();
+    uploadStatus.textContent = r.ok ? `Uploaded: ${Array.from(files).map(f=>f.name).join(', ')}` : `Error: ${j.detail}`;
+    fileInput.value = '';
+  } catch(e) {
+    uploadStatus.textContent = `Failed: ${e.message}`;
+  } finally { uploadBtn.disabled = false; }
+};
+
+// Query
+queryBtn.onclick = async () => {
+  const q = queryInput.value.trim();
+  if (!q) return alert('Enter a question');
+  [result, sources, suggestions, rating].forEach(el => el.classList.add('hidden'));
+  queryStatus.classList.remove('hidden');
+  queryBtn.disabled = true;
+
+  try {
+    const r = await fetch('/query', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({query:q, top_k:5})
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || 'Query failed');
+    lastQueryId = j.query_id;
+
+    // Answer
+    let html = `<strong>Answer:</strong> ${esc(j.answer)}`;
+    if (j.confidence) html += `<br><strong>Confidence:</strong> ${(j.confidence*100).toFixed(1)}%`;
+    if (j.missing_info?.length) html += `<br><strong>Missing info:</strong> ${j.missing_info.map(esc).join('; ')}`;
+    if (j.enriched) html += `<br><em>Enriched with external knowledge</em>`;
+    result.innerHTML = html; result.classList.remove('hidden');
+
+    // Sources
+    if (j.retrieved?.length) {
+      sources.innerHTML = '<strong>Sources:</strong><ul style="margin:6px 0;padding-left:20px">';
+      j.retrieved.forEach(r => sources.innerHTML += `<li>${esc(r.source_filename || r.doc_id)} (score: ${r.score})</li>`);
+      sources.innerHTML += '</ul>';
+    } else sources.innerHTML = '<strong>Sources:</strong> None';
+    sources.classList.remove('hidden');
+
+    // Suggestions
+    if (j.suggestions?.length) {
+      suggestions.innerHTML = '<strong style="color:var(--sugg-title)">Suggestions</strong>';
+      const ul = document.createElement('ul');
+      ul.style = 'margin:8px 0 0;padding-left:20px';
+      j.suggestions.forEach(s => {
+        const li = document.createElement('li');
+        li.style = 'margin-bottom:10px;line-height:1.4';
+        li.innerHTML = `<div><strong style="color:var(--sugg-title)">${esc(s.title)}</strong></div>
+                        <div style="font-size:13px;color:var(--sugg-detail);margin-top:2px">${esc(s.detail)}</div>
+                        <div style="margin-top:6px;font-size:13px">`;
+        const act = document.createElement('div');
+        if (s.action.startsWith('http')) {
+          const a = document.createElement('a');
+          a.href = s.action; a.target = '_blank'; a.textContent = 'Open Wikipedia';
+          a.style = 'color:var(--accent);text-decoration:underline';
+          act.appendChild(a);
+        } else {
+          const inp = document.createElement('input');
+          inp.value = s.action; inp.readOnly = true;
+          inp.style = 'width:68%;font-size:12px;padding:4px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--text)';
+          const btn = document.createElement('button');
+          btn.textContent = 'Copy'; btn.style = 'margin-left:6px;padding:4px 8px;font-size:12px;background:var(--secondary);color:var(--text)';
+          btn.onclick = () => { navigator.clipboard.writeText(inp.value); btn.textContent='Copied'; setTimeout(()=>btn.textContent='Copy',1200); };
+          act.append(inp, btn);
+        }
+        li.appendChild(act); ul.appendChild(li);
+      });
+      suggestions.appendChild(ul);
+    }
+    suggestions.classList.toggle('hidden', !j.suggestions?.length);
+
+    rating.classList.remove('hidden');
+    document.querySelectorAll('.rateBtn').forEach(b=>b.classList.remove('active'));
+  } catch(e) {
+    result.textContent = `Error: ${e.message}`;
+    result.classList.remove('hidden');
+  } finally {
+    queryStatus.classList.add('hidden');
+    queryBtn.disabled = false;
+  }
+};
+
+// Rating
+document.querySelectorAll('.rateBtn').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('.rateBtn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    lastRating = +b.dataset.score;
+  };
+});
+
+$('sendRating').onclick = async () => {
+  if (!lastQueryId || !lastRating) return alert('Complete query and rating');
+  $('ratingStatus').textContent = 'Sending...';
+  try {
+    const r = await fetch('/rate_answer', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({query_id:lastQueryId, rating:lastRating, feedback:$('feedback').value.trim()})
+    });
+    $('ratingStatus').textContent = r.ok ? 'Thank you!' : 'Error';
+  } catch { $('ratingStatus').textContent = 'Failed'; }
+};
+
+function esc(t){const d=document.createElement('div');d.textContent=t;return d.innerHTML}
+</script>
+</body>
+</html>
