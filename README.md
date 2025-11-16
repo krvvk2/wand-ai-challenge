@@ -39,11 +39,11 @@ This is a **RAG system** that:
 
 | Decision | Rationale |
 |--------|---------|
-| In-memory store | Fast prototyping |
+| In-memory store for docs & index | 24h sprint — fastest to code. No Redis/Pinecone setup. Works great for demo. In production, I'd use Redis or Pinecone for persistence. |
 | `numpy` + `cosine` | No vector DB needed |
-| Groq LLM | Ultra-low latency |
+| Groq `llama-3.1-8b-instant` + JSON mode | Tried OpenAI first — too slow/expensive. Groq gives **<100ms latency**, JSON output is reliable. No parsing issues. |
 | Wikipedia | Trusted academic source |
-| Dark mode | Professional look |
+| No Docker | My laptop (8GB RAM) crashed with Docker. Focused on `pip install` → anyone can run in 10s. |
 
 ---
 
@@ -51,10 +51,11 @@ This is a **RAG system** that:
 
 | Trade-off | Choice |
 |---------|--------|
-| Persistence | In-memory → faster dev |
-| Vector DB | `numpy` → no setup |
-| Auth | None → focus on core |
-| Multi-user | Single session → demo scope |
+| Persistence | In-memory → faster dev. Lost on restart. Real app → Redis + disk backup. |
+| Vector DB | `numpy` arrays. Zero setup |
+| Enrichment | Wikipedia only. Wikipedia was reliable + fast. Prioritized working stretch goal. |
+| Error Handling | Basic try/except | Covers PDF fail, LLM timeout. More logging = next sprint.|
+| Chunking | Fixed 800 chars | Simple, fast. Could do overlap/semantic splits — but time ran out. |
 
 ---
 
