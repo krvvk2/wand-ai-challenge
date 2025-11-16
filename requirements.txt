@@ -1,8 +1,9 @@
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-sentence-transformers==3.1.1
-groq==0.9.0
-numpy==2.1.2
-requests==2.32.3
-PyPDF2==3.0.1
-pydantic==2.9.2
+fastapi
+uvicorn[standard]
+sentence-transformers
+groq
+numpy
+requests
+PyPDF2
+pydantic
+python-multipart
