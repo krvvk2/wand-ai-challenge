@@ -30,21 +30,10 @@ This is a **RAG system** that:
 | Suggestions | "Search Wikipedia or arXiv for: X" |
 | Structured Output | JSON: `answer`, `confidence`, `missing_info` |
 | Rating System | `POST /rate_answer` |
-| UI | Dark mode, file names, no clutter |
+| UI | Dark mode, file names, feeback, suggestions |
 
 ---
 
-## Architecture
-
-
-[User] → [FastAPI] → [Sentence Transformers] → [Vector Index]
-↓
-[Groq LLM] ← RAG Context
-↓
-[Answer + Confidence + Suggestions]
-↓
-[Wikipedia API] (if needed)
----
 
 ## Design Decisions
 
